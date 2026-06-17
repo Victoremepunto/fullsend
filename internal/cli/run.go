@@ -27,6 +27,7 @@ import (
 	"github.com/fullsend-ai/fullsend/internal/harness"
 	"github.com/fullsend-ai/fullsend/internal/lock"
 	"github.com/fullsend-ai/fullsend/internal/mintclient"
+	"github.com/fullsend-ai/fullsend/internal/mintcore"
 	"github.com/fullsend-ai/fullsend/internal/resolve"
 	agentruntime "github.com/fullsend-ai/fullsend/internal/runtime"
 	"github.com/fullsend-ai/fullsend/internal/sandbox"
@@ -301,6 +302,21 @@ func runAgent(ctx context.Context, agentName, fullsendDir, outputBase, targetRep
 		h.Image = resolved
 	}
 
+	// Mint agent token when a mint URL and harness role are both available.
+	// Runs before env expansion so minted tokens flow into RunnerEnv and
+	// host_files via os.Getenv automatically.
+	mintURL := sOpts.mintURL
+	if mintURL == "" {
+		mintURL = os.Getenv("FULLSEND_MINT_URL")
+	}
+	minted, err := mintAgentToken(ctx, h.Role, mintURL, printer)
+	if err != nil {
+		return fmt.Errorf("agent token minting failed: %w", err)
+	}
+	if !minted && h.Role != "" && mintURL == "" {
+		printer.StepWarn("No --mint-url provided; skipping token minting for role " + h.Role)
+	}
+
 	// Expand env vars in runner_env values. FULLSEND_DIR is injected so
 	// harness configs can reference files relative to the fullsend directory
 	// (e.g., ${FULLSEND_DIR}/schemas/triage-result.schema.json).
@@ -408,7 +424,7 @@ func runAgent(ctx context.Context, agentName, fullsendDir, outputBase, targetRep
 	// post-script — and can report cancellation/failure even when the
 	// sandbox never starts. See #1859.
 	if sOpts.statusRepo != "" && sOpts.statusNum > 0 {
-		notifier, notifyErr := setupStatusNotifier(absFullsendDir, agentName, sOpts, printer)
+		notifier, notifyErr := setupStatusNotifier(absFullsendDir, h.Role, sOpts, printer)
 		if notifyErr != nil {
 			printer.StepWarn("Status notifications disabled: " + notifyErr.Error())
 		} else {
@@ -1848,7 +1864,7 @@ func titleCase(s string) string {
 	return strings.Join(words, " ")
 }
 
-func setupStatusNotifier(fullsendDir string, agentName string, sOpts statusOpts, printer *ui.Printer) (*statuscomment.Notifier, error) {
+func setupStatusNotifier(fullsendDir string, role string, sOpts statusOpts, printer *ui.Printer) (*statuscomment.Notifier, error) {
 	parts := strings.SplitN(sOpts.statusRepo, "/", 2)
 	if len(parts) != 2 {
 		return nil, fmt.Errorf("--status-repo must be in owner/repo format, got %q", sOpts.statusRepo)
@@ -1893,11 +1909,11 @@ func setupStatusNotifier(fullsendDir string, agentName string, sOpts statusOpts,
 		printer.StepWarn(fmt.Sprintf(format, args...))
 	})
 
-	role := resolveRole(agentName)
+	canonRole := resolveRole(role)
 	n.SetClientFactory(func(ctx context.Context) (forge.Client, error) {
 		result, err := statusMintToken(ctx, mintclient.MintRequest{
 			MintURL: mintURL,
-			Role:    role,
+			Role:    canonRole,
 			Repos:   []string{repo},
 		})
 		if err != nil {
@@ -1968,4 +1984,114 @@ func emitDiagnosticWithContext(printer *ui.Printer, context string, diag harness
 	default:
 		printer.StepWarn(msg)
 	}
+}
+
+// roleTokenVars maps canonical role names to the additional env vars they
+// require beyond GH_TOKEN. These match the vars declared in
+// forge.github.runner_env across the harness YAML files.
+var roleTokenVars = map[string][]string{
+	"coder":  {"PUSH_TOKEN", "PUSH_TOKEN_SOURCE"},
+	"review": {"REVIEW_TOKEN"},
+	"retro":  {"RETRO_SANDBOX_TOKEN"},
+}
+
+// mintAgentToken mints a GitHub App installation token for the agent's role
+// and sets the appropriate env vars so RunnerEnv expansion and host_files
+// expansion pick them up. Returns true if a token was minted.
+func mintAgentToken(ctx context.Context, role, mintURL string, printer *ui.Printer) (bool, error) {
+	if mintURL == "" || role == "" {
+		return false, nil
+	}
+
+	repos, err := resolveMintRepos()
+	if err != nil {
+		return false, fmt.Errorf("resolving mint repos for role %s: %w", role, err)
+	}
+
+	canonicalRole := resolveRole(role)
+	if err := mintcore.ValidateRoleName(canonicalRole); err != nil {
+		return false, fmt.Errorf("invalid role %q: %w", canonicalRole, err)
+	}
+	printer.StepStart("Minting agent token (role: " + canonicalRole + ")")
+
+	result, err := statusMintToken(ctx, mintclient.MintRequest{
+		MintURL: mintURL,
+		Role:    canonicalRole,
+		Repos:   repos,
+	})
+	if err != nil {
+		return false, fmt.Errorf("minting agent token for role %s: %w", canonicalRole, err)
+	}
+
+	if !mintTokenPattern.MatchString(result.Token) {
+		return false, fmt.Errorf("mint returned token with unexpected characters for role %s", canonicalRole)
+	}
+
+	if os.Getenv("GITHUB_ACTIONS") == "true" {
+		fmt.Fprintf(os.Stderr, "::add-mask::%s\n", result.Token)
+	}
+
+	os.Setenv("GH_TOKEN", result.Token)
+
+	extras := roleTokenVars[canonicalRole]
+	for _, v := range extras {
+		if v == "PUSH_TOKEN_SOURCE" {
+			os.Setenv(v, "github-app")
+		} else {
+			os.Setenv(v, result.Token)
+		}
+	}
+
+	expiresAt := strings.Map(func(r rune) rune {
+		if (r >= '0' && r <= '9') || r == '-' || r == ':' || r == 'T' || r == 'Z' || r == '+' {
+			return r
+		}
+		return -1
+	}, result.ExpiresAt)
+	printer.StepDone("Agent token minted (expires " + expiresAt + ")")
+	return true, nil
+}
+
+// resolveMintRepos determines which repos to request token access for.
+// MINT_REPOS (comma-separated) takes precedence, falling back to extracting
+// the repo name from REPO_FULL_NAME (owner/repo → repo).
+func resolveMintRepos() ([]string, error) {
+	if v := os.Getenv("MINT_REPOS"); v != "" {
+		var repos []string
+		for _, r := range strings.Split(v, ",") {
+			if trimmed := strings.TrimSpace(r); trimmed != "" {
+				repos = append(repos, trimmed)
+			}
+		}
+		if len(repos) > 0 {
+			if err := validateRepoNames(repos); err != nil {
+				return nil, err
+			}
+			return repos, nil
+		}
+	}
+
+	fullName := os.Getenv("REPO_FULL_NAME")
+	if fullName == "" {
+		return nil, fmt.Errorf("MINT_REPOS or REPO_FULL_NAME must be set for token minting")
+	}
+
+	parts := strings.SplitN(fullName, "/", 2)
+	if len(parts) != 2 || parts[1] == "" {
+		return nil, fmt.Errorf("REPO_FULL_NAME must be in owner/repo format, got %q", fullName)
+	}
+	repo := parts[1]
+	if !mintcore.RepoNamePattern.MatchString(repo) {
+		return nil, fmt.Errorf("invalid repo name %q from REPO_FULL_NAME: must match %s", repo, mintcore.RepoNamePattern.String())
+	}
+	return []string{repo}, nil
+}
+
+func validateRepoNames(repos []string) error {
+	for _, r := range repos {
+		if !mintcore.RepoNamePattern.MatchString(r) {
+			return fmt.Errorf("invalid repo name %q in MINT_REPOS: must match %s", r, mintcore.RepoNamePattern.String())
+		}
+	}
+	return nil
 }
