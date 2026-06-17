@@ -91,31 +91,20 @@ distributions, we tighten them. The values should be generous enough to
 avoid flaky failures but tight enough to catch regressions (e.g., an agent
 that loops).
 
-### 3. Universal enforcement in `run-functional.sh`
+### 3. Enforcement via per-skill judges
 
-The behavioral threshold checks are **not** per-skill judges in `eval.yaml`.
-They are universal invariants enforced by the orchestrator so that:
+> **Status: revised.** The original design proposed universal orchestrator-level
+> enforcement. During implementation, threshold checks moved to per-skill
+> deterministic judges in `eval.yaml` — the harness's built-in judge
+> infrastructure handles the comparison, scoring, and reporting. See the
+> `max_turns` and `max_cost` check blocks in `eval/triage/eval.yaml` for the
+> actual implementation.
 
-- Every skill gets them automatically — no copying judge definitions.
-- New skills can't opt out — the orchestrator enforces them before scoring.
-- The harness judges remain focused on quality; the orchestrator handles cost.
-
-The enforcement flow in `run-functional.sh`:
-
-1. **Pre-flight validation:** Before running any case, verify that its
-   `annotations.yaml` contains both `max_turns` and `max_cost_usd`. Fail
-   fast if missing — this is a test authoring error, not a test failure.
-
-2. **Post-run threshold check:** After the runner completes, compare
-   `metrics.json` values against `annotations.yaml` thresholds. Log a clear
-   pass/fail for each:
-   ```
-   Threshold: max_turns     15  actual  8   PASS
-   Threshold: max_cost_usd  2.00  actual  0.42  PASS
-   ```
-
-3. **Threshold failures count toward the overall result.** A case that passes
-   all quality judges but exceeds a behavioral threshold is a failure.
+Behavioral thresholds are enforced as deterministic judges in each skill's
+`eval.yaml`. Each judge reads `metrics.json` (written by `fullsend run`) and
+compares actual values against the thresholds declared in `annotations.yaml`.
+A case that passes all quality judges but exceeds a behavioral threshold is
+a failure.
 
 ### 4. Why `max_turns` and `max_cost_usd` (not token counts)
 
@@ -139,11 +128,11 @@ We do **not** gate on raw `input_tokens` or `output_tokens` because:
 - When statistical evals provide per-model token distributions, we can add
   token thresholds as a refinement. The `metrics.json` already records them.
 
-### 5. ADR 0048 update
+### 5. ADR 0050 update
 
-ADR 0048 gets a new section documenting this decision: behavioral thresholds
-are mandatory for all functional test cases, enforced universally by the
-orchestrator, and baselined roughly until statistical evals provide observed
+ADR 0050 gets a new section documenting this decision: behavioral thresholds
+are mandatory for all functional test cases, enforced as per-skill deterministic
+judges, and baselined roughly until statistical evals provide observed
 distributions.
 
 ### 6. `fullsend-runner.sh` propagates `metrics.json`
@@ -156,11 +145,11 @@ directory so the orchestrator can find it.
 
 | File | Change |
 |------|--------|
-| `internal/cli/progress.go` | Extend `RunMetrics` with `NumTurns`, `TotalCostUSD`, `InputTokens`, `OutputTokens` |
+| `internal/runtime/claude_progress.go` | Extend `RunMetrics` with `NumTurns`, `TotalCostUSD`, `InputTokens`, `OutputTokens` |
 | `internal/cli/run.go` | Write `metrics.json` after all iterations, aggregating across retries |
-| `internal/cli/progress_test.go` | Test metrics extraction from stream events |
-| `eval/fullsend-runner.sh` | Copy `metrics.json` to case output directory |
-| `eval/run-functional.sh` | Add pre-flight validation and post-run threshold checks |
+| `internal/runtime/claude_progress_test.go` | Test metrics extraction from stream events |
+| `eval/scripts/run-fullsend.sh` | Copy `metrics.json` to case output directory |
+| `eval/run-functional.sh` | Orchestrator for workspace → execute → score phases |
 | `eval/triage/cases/001-bug-url-encoding/annotations.yaml` | Add `max_turns` and `max_cost_usd` |
 | `docs/ADRs/0050-functional-tests-for-agent-pipelines.md` | Add behavioral thresholds section |
 | `docs/testing/functional-tests.md` | Document threshold requirements |

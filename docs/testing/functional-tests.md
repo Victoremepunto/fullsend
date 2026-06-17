@@ -102,11 +102,12 @@ Define the GitHub fixture the agent will triage or review:
 
 ```yaml
 forge: github
-fixture: issue          # or: pull_request
-title: "Bug: login fails with special characters"
-body: |
-  When a username contains a `+`, the login form rejects it
-  with a 400 error.
+fixture:
+  type: issue          # or: pull_request
+  title: "Bug: login fails with special characters"
+  body: |
+    When a username contains a `+`, the login form rejects it
+    with a 400 error.
 ```
 
 ### 3. Write `annotations.yaml`
@@ -202,6 +203,7 @@ Functional tests run in GitHub Actions when files under `eval/` or
 `internal/scaffold/` change. The workflow is defined in
 `.github/workflows/functional-tests.yml`.
 
-Tests require the `evals` GitHub environment, which provides secrets
-(`EVAL_GH_TOKEN`, `GCP_CREDENTIALS`) and vars (`EVAL_ORG`,
-`ANTHROPIC_VERTEX_PROJECT_ID`).
+Tests require the `functional-tests` GitHub environment, which provides
+secrets (`EVAL_GH_TOKEN`, `E2E_GCP_WIF_PROVIDER`, `E2E_GCP_SERVICE_ACCOUNT`,
+`E2E_GCP_PROJECT_ID`) and vars (`EVAL_ORG`, `EVALS_VERTEX_PROJECT_ID`,
+`EVALS_GCP_REGION`).

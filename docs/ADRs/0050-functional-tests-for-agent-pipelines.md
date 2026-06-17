@@ -7,7 +7,7 @@ topics:
   - testing
 ---
 
-# 48. Functional tests for agent pipelines
+# 50. Functional tests for agent pipelines
 
 Date: 2026-05-29
 

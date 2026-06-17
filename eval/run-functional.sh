@@ -50,7 +50,7 @@ if ! command -v openshell &>/dev/null; then
   echo "       Run: .github/scripts/install-openshell.sh" >&2
   exit 1
 fi
-installed_version=$(openshell --version 2>&1 | grep -oP '\d+\.\d+\.\d+' | head -1)
+installed_version=$(openshell --version 2>&1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
 if [[ "$installed_version" != "$OPENSHELL_VERSION" ]]; then
   echo "ERROR: openshell version mismatch: installed ${installed_version}, expected ${OPENSHELL_VERSION}" >&2
   echo "       Run: .github/scripts/install-openshell.sh" >&2

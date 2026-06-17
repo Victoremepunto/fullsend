@@ -86,9 +86,14 @@ rm -f "$ENV_FILE"
 # OUTPUT_DIR is {output_dir} from the harness, which is workspace/output.
 # score.py loads files relative to case_dir/output, so metrics.json needs
 # to be at OUTPUT_DIR/metrics.json (not OUTPUT_DIR/output/metrics.json).
-METRICS_FILE=$(find "$OUTPUT_DIR" -maxdepth 3 -name metrics.json -not -path "$OUTPUT_DIR/metrics.json" 2>/dev/null | head -1)
-if [[ -n "$METRICS_FILE" ]]; then
-  cp "$METRICS_FILE" "$OUTPUT_DIR/metrics.json"
+METRICS_FILES=$(find "$OUTPUT_DIR" -maxdepth 3 -name metrics.json -not -path "$OUTPUT_DIR/metrics.json" 2>/dev/null)
+MATCH_COUNT=$(echo "$METRICS_FILES" | grep -c . 2>/dev/null || true)
+if [[ "$MATCH_COUNT" -gt 1 ]]; then
+  echo "ERROR: multiple metrics.json files found — cannot determine which to use" >&2
+  echo "$METRICS_FILES" >&2
+  exit 1
+elif [[ "$MATCH_COUNT" -eq 1 ]]; then
+  cp "$METRICS_FILES" "$OUTPUT_DIR/metrics.json"
   echo "Copied metrics -> $OUTPUT_DIR/metrics.json"
 fi
 
