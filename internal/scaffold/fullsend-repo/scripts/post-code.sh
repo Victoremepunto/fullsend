@@ -230,7 +230,7 @@ if [ -f .pre-commit-config.yaml ] \
    && [ -f "${INSTALL_SCRIPT}" ]; then
   MANIFEST="$(mktemp)"
   python3 "${RESOLVE_SCRIPT}" "." > "${MANIFEST}" \
-    || echo "::warning::Pre-commit tool resolution failed (exit $?) — continuing without auto-install"
+    || { echo "::warning::Pre-commit tool resolution failed (exit $?) — continuing without auto-install"; : > "${MANIFEST}"; }
   if [ -s "${MANIFEST}" ] && jq -e '.tools | length > 0' "${MANIFEST}" >/dev/null 2>&1; then
     bash "${INSTALL_SCRIPT}" "${MANIFEST}"
   fi

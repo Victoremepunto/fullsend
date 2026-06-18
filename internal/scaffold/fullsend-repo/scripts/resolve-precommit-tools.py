@@ -19,7 +19,18 @@ try:
 except ImportError:
     try:
         subprocess.check_call(
-            [sys.executable, "-m", "pip", "install", "--quiet", "--no-deps", "pyyaml==6.0.2"],
+            [
+                sys.executable,
+                "-m",
+                "pip",
+                "install",
+                "--quiet",
+                "--no-deps",
+                "pyyaml==6.0.2",
+                "--require-hashes",
+                "--hash=sha256:80bab7bfc629882493af4aa31a4cfa43a4c57c83813253626916b8c7ada83476",
+                "--hash=sha256:1f71ea527786de97d1a0cc0eacd1defc0985dcf6b3f17bb77dcfc8c34bec4dc5",
+            ],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )

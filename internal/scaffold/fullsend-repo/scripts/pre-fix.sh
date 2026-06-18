@@ -116,7 +116,7 @@ if [ -f "${TARGET_REPO}/.pre-commit-config.yaml" ] \
   echo "Resolving pre-commit tool dependencies..."
   MANIFEST="$(mktemp)"
   python3 "${RESOLVE_SCRIPT}" "${TARGET_REPO}" > "${MANIFEST}" \
-    || echo "::warning::Pre-commit tool resolution failed (exit $?) — continuing without auto-install"
+    || { echo "::warning::Pre-commit tool resolution failed (exit $?) — continuing without auto-install"; : > "${MANIFEST}"; }
   if [ -s "${MANIFEST}" ] && jq -e '.tools | length > 0' "${MANIFEST}" >/dev/null 2>&1; then
     bash "${INSTALL_SCRIPT}" "${MANIFEST}"
   else
