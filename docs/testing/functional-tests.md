@@ -6,9 +6,9 @@ agents produce the right side effects (labels, comments, PR state) when given
 controlled inputs.
 
 For the decision rationale, see
-[ADR 0050](../ADRs/0050-functional-tests-for-agent-pipelines.md). For the
+[ADR 0051](../ADRs/0051-functional-tests-for-agent-pipelines.md). For the
 framework choice, see
-[ADR 0049](../ADRs/0049-agent-eval-harness-for-test-infrastructure.md). For
+[ADR 0050](../ADRs/0050-agent-eval-harness-for-test-infrastructure.md). For
 the broader testing problem, see
 [testing-agents.md](../problems/testing-agents.md).
 

@@ -1,5 +1,5 @@
 ---
-title: "49. agent-eval-harness for test infrastructure"
+title: "50. agent-eval-harness for test infrastructure"
 status: Accepted
 relates_to:
   - testing-agents
@@ -7,7 +7,7 @@ topics:
   - testing
 ---
 
-# 49. agent-eval-harness for test infrastructure
+# 50. agent-eval-harness for test infrastructure
 
 Date: 2026-05-29
 
@@ -22,7 +22,7 @@ Accepted
 
 ## Context
 
-[ADR 0050](0050-functional-tests-for-agent-pipelines.md) establishes
+[ADR 0051](0051-functional-tests-for-agent-pipelines.md) establishes
 functional tests as a test category for agent pipelines. That decision is
 silent on which framework orchestrates them — it could be custom scripts,
 Inspect AI, or something else.
