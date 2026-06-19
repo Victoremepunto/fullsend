@@ -107,6 +107,80 @@ with:
   fullsend_cli_ref: v0.15.0
 ```
 
+## 2026-06-19 amendments
+
+### Per-repo `reusable-dispatch.yml` hardcoded `v0` overlook
+
+The initial plan to implement this overlooked that `reusable-dispatch.yml` hardcodes
+`v0` when triggering other workflows (`reusable-triage.yml` for example). This only
+happens on per-repo mode, as per-org uses its own `dispatch.yml`.
+
+This is a problem, as the version transmitted to the `reusable-dispatch.yml` from the
+shim can't be used to call the appropriate version of `reusable-<stage>.yml`.
+
+There are a couple of options:
+
+* **Re-introduce `reusable-dispatch.yml` to the user repository** - rejected
+as we already extracted it to reduce update noise in the user's repository
+* **Convert dispatch to a composite action** - rejected because actions
+can't spawn jobs naturally, and can't use `workflow_call`.
+* **Commit changes to reusable-dispatch.yml on release** - accepted, more details
+below.
+
+#### Commit changes to reusable-dispatch.yml on release
+
+This approach changes our release process to use tags on release branches instead of
+tags in the `main` branch. This enables us to continue using `main` and have there `main`
+hardcoded.
+
+1. `git checkout main && git fetch origin && git pull`
+1. Decide the next version based on the previous tags and the difference between HEAD and the tag.
+1. `git checkout -b release-${VERSION}`
+1. Make changes to `reusable-dispatch.yml` to change `uses:...@v0` to `uses:...@${VERSION}`.
+1. Make changes to `reusable-dispatch.yml` to change defaults values for `fullsend_actions_ref`,
+`fullsend_cli_ref`, `fullsend_ai_ref` and `fullsend_version` from `v0` to `${VERSION}`.
+1. Commit the changes to the branch.
+1. Tag the branch with `${VERSION}` and `latest`.
+1. Push branch and tag.
+
+### The `main` branch will use `@main`
+
+Currently `reusable-dispatch.yml` uses `@v0` on the `main` branch, that should be changed
+to `@main` on `uses:` and other variables, so pointing to `main` on the shim will have the
+desired effect of tracking the development changes.
+
+### Period of migration
+
+The ADR proposed that current users would migrate automatically to follow the new
+floating tag `latest`. However at implementation time a limitation has been detected:
+if `v0` is changed to the new changes (or dropped) users will break. There seems to
+be two solutions:
+
+* Do not update anymore `v0`. Users will keep pulling from `v0` and they will be behind,
+so a communication needs to happen so they run install commands again to refresh
+their shims. Rejected.
+* Update `v0` a last time to these changes. This would mean that workflows would
+need to preserve behaviour. Accepted, more details below.
+
+#### Period of migration by moving `v0`
+
+Moving `v0` one last time to these new changes mean that updated workflows
+receive `fullsend_ai_ref` and `fullsend_version` so they can't be removed. Instead
+they are used as a fallback to preserve behavior:
+
+```yaml
+# reusable-dispatch.yaml/dispatch.yaml
+triage:
+  uses: ...
+  with:
+    fullsend_actions_ref: ${{ inputs.fullsend_actions_ref || inputs.fullsend_ai_ref }}
+    fullsend_cli_ref: ${{ inputs.fullsend_cli_ref || inputs.fullsend_version }}
+```
+
+A deprecation notice needs to happen, so users install again to get their
+shims refreshed with the new variables. After a while we can remove the old
+variables from the workflows. Everyone not migrated by then will be broken.
+
 ## Some Future Problems
 
 * Currently images are not versioned, they just have the `latest` tag. This needs to
